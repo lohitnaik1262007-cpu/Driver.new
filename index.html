@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Driver Panel</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
+
+  <style>
+    body{background:#0b0b0b;color:white;font-family:Arial}
+    #map{height:400px;margin-top:10px}
+    input,button{padding:8px;margin:5px}
+    li{background:#111;margin:6px 0;padding:8px;border-radius:6px}
+  </style>
+</head>
+
+<body>
+
+<h2>🚍 Driver Panel</h2>
+
+<input id="route" placeholder="Route (Majestic – KR Market)">
+<button onclick="startBus()">Start Sharing</button>
+
+<div id="map"></div>
+
+<h3>Active Buses</h3>
+<ul id="busList"></ul>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import { getDatabase, ref, set, remove } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
+/* FIREBASE CONFIG */
+const firebaseConfig = {
+  apiKey: "AIzaSyDeW9xeNEKBnXzHNoaAdkLuxaXYocSEq18",
+  authDomain: "my-bus-tracker-c734b.firebaseapp.com",
+  databaseURL: "https://my-bus-tracker-c734b-default-rtdb.firebaseio.com",
+  projectId: "my-bus-tracker-c734b",
+  storageBucket: "my-bus-tracker-c734b.firebasestorage.app",
+  messagingSenderId: "255818671180",
+  appId: "1:255818671180:web:2b8fb2d4a88c5a109dc0e9"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
+/* MAP */
+const map = L.map("map").setView([12.97,77.59],13);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+
+/* BUS ICON */
+const busIcon = L.divIcon({
+  html: "🚌",
+  iconSize: [30,30],
+  className: ""
+});
+
+const activeBuses = {};
+
+/* START BUS */
+window.startBus = () => {
+  const route = document.getElementById("route").value.trim();
+  if(!route){ alert("Enter route"); return; }
+
+  const busId = "bus_" + Date.now();
+  let marker = null;
+  let active = true;
+
+  const watchId = navigator.geolocation.watchPosition(pos=>{
+    if(!active) return;
+
+    const latlng = [pos.coords.latitude, pos.coords.longitude];
+
+    if(!marker){
+      marker = L.marker(latlng,{icon:busIcon}).addTo(map);
+    } else {
+      marker.setLatLng(latlng);
+    }
+
+    set(ref(db,"buses/"+busId),{
+      id: busId,
+      route: route,
+      lat: latlng[0],
+      lng: latlng[1],
+      time: Date.now(),
+      active: true
+    });
+
+    map.setView(latlng,15);
+  });
+
+  activeBuses[busId] = { watchId, marker, active:true };
+  renderBusList();
+};
+
+/* STOP BUS */
+window.stopBus = (busId) => {
+  const bus = activeBuses[busId];
+  if(!bus) return;
+
+  bus.active = false;
+  navigator.geolocation.clearWatch(bus.watchId);
+
+  if(bus.marker) map.removeLayer(bus.marker);
+  remove(ref(db,"buses/"+busId));
+
+  delete activeBuses[busId];
+  renderBusList();
+};
+
+/* BUS LIST */
+function renderBusList(){
+  const ul = document.getElementById("busList");
+  ul.innerHTML = "";
+
+  const ids = Object.keys(activeBuses);
+  if(ids.length === 0){
+    ul.innerHTML = "<li>No active buses</li>";
+    return;
+  }
+
+  ids.forEach(id=>{
+    const li = document.createElement("li");
+    li.innerHTML = `
+      <b>${id}</b><br>
+      Status: Live<br>
+      <button onclick="stopBus('${id}')">Stop</button>
+    `;
+    ul.appendChild(li);
+  });
+}
+</script>
+
+</body>
+</html>
